@@ -236,12 +236,12 @@ void receptionistMenu() {
     // Close SQLite
     sqlite3_close(db);
 }
-
 void registerPatient(sqlite3* db) {
     char* errMsg = 0;
     string sql = "CREATE TABLE IF NOT EXISTS Patients ("
                  "ID INTEGER PRIMARY KEY AUTOINCREMENT,"
-                 "Name TEXT NOT NULL,"
+                 "fName TEXT NOT NULL,"
+                 "lName TEXT NOT NULL,"
                  "Age INTEGER NOT NULL,"
                  "Sex TEXT NOT NULL,"
                  "Allergies TEXT,"
@@ -256,12 +256,14 @@ void registerPatient(sqlite3* db) {
         return;
     }
 
-    string name, sex, allergies, nextOfKinTelNo, patientTelNo, location;
+    string fName, lName, sex, allergies, patientTelNo, nextOfKinTelNo, location;
     int age;
 
-    cout << "Enter patient name: ";
+    cout << "Enter patient first name: ";
     cin.ignore();
-    getline(cin, name);
+    getline(cin, fName);
+    cout << "Enter patient last name: ";
+    getline(cin, lName);
     cout << "Enter patient age: ";
     cin >> age;
     cout << "Enter patient sex: ";
@@ -269,15 +271,15 @@ void registerPatient(sqlite3* db) {
     cout << "Enter patient allergies: ";
     cin.ignore();
     getline(cin, allergies);
-    cout << "Enter next of kin telephone number: ";
-    getline(cin, nextOfKinTelNo);
     cout << "Enter patient telephone number: ";
     getline(cin, patientTelNo);
+    cout << "Enter next of kin telephone number: ";
+    getline(cin, nextOfKinTelNo);
     cout << "Enter patient location: ";
     getline(cin, location);
 
-    sql = "INSERT INTO Patients (Name, Age, Sex, Allergies, NextOfKinTelNo, PatientTelNo, Location) "
-          "VALUES ('" + name + "', " + to_string(age) + ", '" + sex + "', '" + allergies + "', '" + nextOfKinTelNo + "', '" + patientTelNo + "', '" + location + "');";
+    sql = "INSERT INTO Patients (fName, lName, Age, Sex, Allergies, NextOfKinTelNo, PatientTelNo, Location) "
+          "VALUES ('" + fName + "', '" + lName + "', " + to_string(age) + ", '" + sex + "', '" + allergies + "', '" + nextOfKinTelNo + "', '" + patientTelNo + "', '" + location + "');";
 
     rc = sqlite3_exec(db, sql.c_str(), 0, 0, &errMsg);
     if (rc != SQLITE_OK) {
