@@ -43,73 +43,7 @@ void printMenu(const vector<string>& menu) {
 }
 
 
-void adminMenu() {
-    vector<string> adminMenuOptions = {
-        "Admin Menu:",
-        "1. Option 1",
-        "2. Option 2",
-        "3. Option 3",
-        "4. Back to Main Menu"
-    };
-
-    int choice = 0;
-    string lastChoice; // Variable to store the last selected option
-    string errorMessage;
-
-    while (choice != 4) {
-        printMenu(adminMenuOptions);
-
-        if (!errorMessage.empty()) {
-            cout << "\033[31m" << errorMessage << "\033[0m" << endl; // Print error message in red
-        }
-
-        if (!lastChoice.empty()) {
-            cout << lastChoice << endl;
-        }
-
-        cin >> choice;
-
-        if (cin.fail()) { // Check if the input is invalid
-            errorMessage = "Your choice is invalid";
-            cin.clear(); // Clear the error flag
-            cin.ignore(numeric_limits<streamsize>::max(), '\n'); // Discard invalid input
-            choice = 0; // Reset choice to continue the loop
-        } else if (choice < 1 || choice > 4) {
-            errorMessage = "Invalid choice. Please choose 1, 2, 3, or 4.";
-        } else {
-            errorMessage.clear(); // Clear the error message if the input is valid
-            // Store the last valid choice
-
-            switch (choice) {
-                case 1:
-                    // Call function for Option 1
-                    lastChoice = "Admin Option 1 selected";
-                    break;
-                case 2:
-                    // Call function for Option 2
-                    lastChoice = "Admin Option 2 selected";
-                    break;
-                case 3:
-                    // Call function for Option 3
-                    lastChoice = "Admin Option 3 selected";
-                    break;
-                case 4:
-                    // Go back to main menu
-                    lastChoice = "Returning to main menu";
-                    break;
-            }
-        }
-    }
-}
-
-void adminAddStaff() {
-    // Function for Admin add staff 
-}
-
-void adminViewRecords(){
-
-}
-
+// Doctor's code:
 void doctorMenu() {
     vector<string> doctorMenuOptions = {
         "Doctor's Appointments:",
@@ -169,6 +103,7 @@ void doctorMenu() {
     }
 }
 
+// Receptionist code:
 void receptionistMenu() {
     vector<string> receptionistMenuOptions = {
         "Receptionist Menu:",
@@ -289,12 +224,152 @@ void registerPatient(sqlite3* db) {
         cout << "Patient registered successfully!" << endl;
     }
 }
+
+// Admin code:
+void adminMenu() {
+    vector<string> adminMenuOptions = {
+        "Admin Menu:",
+        "1. Register Staff",
+        "2. Option 2",
+        "3. Option 3",
+        "4. Back to Main Menu"
+    };
+
+    int choice = 0;
+    string lastChoice; // Variable to store the last selected option
+    string errorMessage;
+
+    while (choice != 4) {
+        printMenu(adminMenuOptions);
+
+        if (!errorMessage.empty()) {
+            cout << "\033[31m" << errorMessage << "\033[0m" << endl; // Print error message in red
+        }
+
+        if (!lastChoice.empty()) {
+            cout << lastChoice << endl;
+        }
+
+        cin >> choice;
+
+        if (cin.fail()) { // Check if the input is invalid
+            errorMessage = "Your choice is invalid";
+            cin.clear(); // Clear the error flag
+            cin.ignore(numeric_limits<streamsize>::max(), '\n'); // Discard invalid input
+            choice = 0; // Reset choice to continue the loop
+        } else if (choice < 1 || choice > 4) {
+            errorMessage = "Invalid choice. Please choose 1, 2, 3, or 4.";
+        } else {
+            errorMessage.clear(); // Clear the error message if the input is valid
+            // Store the last valid choice
+
+            switch (choice) {
+                case 1:
+                    // Call function for Option 1
+                    lastChoice = "Admin Option 1 selected";
+                    break;
+                case 2:
+                    // Call function for Option 2
+                    lastChoice = "Admin Option 2 selected";
+                    break;
+                case 3:
+                    // Call function for Option 3
+                    lastChoice = "Admin Option 3 selected";
+                    break;
+                case 4:
+                    // Go back to main menu
+                    lastChoice = "Returning to main menu";
+                    break;
+            }
+        }
+    }
+}
+
+// Admin auth:
 bool authenticateAdmin(const string& username, const string& password) {
     const string adminUser = "admin";
     const string adminPass = "admin";
     return (username == adminUser && password == adminPass);
 }
 
+// Staff regestration function DB:
+void staffReg(sqlite3* db){
+    char* errMsg = 0;
+    string sql = "CREATE TABLE IF NOT EXISTS staff("
+    "ID INTEGER PRIMARY KEY AUTOINCREMENT,"
+    "username TEXT NOT NULL,"
+    "password TEXT NOT NULL,"
+    "fName TEXT NOT NULL,"
+    "lName TEXT NOT NULL,"
+    "specialization TEXT NOT NULL,"
+    "salary REAL NOT NULL,"
+    "idNumber INTEGER NOT NULL,"
+    "age INTEGER NOT NULL,"
+    "telNo INTEGER NOT NULL,"
+    "location TEXT NOT NULL,"
+    ");";
+
+    int rc = sqlite3_exec(db, sql.c_str(),0,0,&errMsg);
+
+    if(rc!=SQLITE_OK){
+        cerr << "SQL error (table creation):"<<errMsg<<endl;
+        sqlite3_free(errMsg);
+        return;
+    }
+    else{
+        cout<<"Table created successfully"<< endl;
+    }
+
+    string username, password, fName,lName,specialization,location;
+    int age, telNo,idNumber;
+    float salary;
+
+    cout<<"Enter username: ";
+    cin.ignore();
+    getline(cin,username);
+    cout<<"Enter password: ";
+    getline(cin,password);
+    cout<<"Enter first name: ";
+    getline(cin,fName);
+    cout<<"Enter last name: ";
+    getline(cin,lName);
+    cout<<"Enter specialization: ";
+    getline(cin,specialization);
+    cout<<"Enter salary: ";
+    cin>>salary;
+    cout<<"Enter ID number: ";
+    cin>>idNumber;
+    cout<<"Enter age: ";
+    cin>>age;
+    cout<<"Enter telephone number: ";
+    cin>>telNo;
+    cout<<"Enter location: ";
+    cin.ignore();
+    getline(cin,location);
+
+    sql = "INSERT INTO staff (username,password,fName,lName,specialization,salary,idNumber,age,telNo,location) "
+          "VALUES ('" + username + "', '" + password + "', '" + fName + "', '" + lName + "', '" + specialization + "', " + to_string(salary) + ", " + to_string(idNumber) + ", " + to_string(age) + ", " + to_string(telNo) + ", '" + location + "');";
+    
+    rc = sqlite3_exec(db, sql.c_str(), 0, 0, &errMsg);
+
+    if (rc != SQLITE_OK) {
+        cerr << "SQL error (insertion): " << errMsg << endl;
+        sqlite3_free(errMsg);
+    } else {
+        cout << "Staff registered successfully!" << endl;
+    }
+}
+
+void adminAddStaff() {
+    // Function to add staff to the database
+
+}
+
+void adminViewRecords(){
+
+}
+
+// Main function code
 int main() {
     int choice = 0;
     string errorMessage;
