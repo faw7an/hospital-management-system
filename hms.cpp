@@ -5,6 +5,8 @@
 #include <cstdlib> // Include the cstdlib library for the exit function
 #include "sqlite3.h"
 #include <sstream>
+#include <iomanip> // Include for std::setw and std::left
+
 
 using namespace std;
 
@@ -18,6 +20,7 @@ void staffReg(sqlite3* db);
 void printMenu(const vector<string>& menu);
 string mainMenu(int choice, sqlite3* db);
 void viewStaffRecords(sqlite3* db);
+void viewPatientRecords(sqlite3* db);
 
 // padding center
 void printCentered(const string& text, int consoleWidth) {
@@ -46,12 +49,6 @@ void printMenu(const vector<string>& menu) {
     cout << "\033[0m"; // Reset text formatting
 }
 
-void printRecords(const vector<string>& menu) {
-    system("cls"); // Clear the console
-    cout << "\033[1m"; // Set text to bold
-    printWithBorder(menu);
-    cout << "\033[0m"; // Reset text formatting
-}
 
 // Doctor's code:
 void doctorMenu(sqlite3* db) {
@@ -177,7 +174,7 @@ void registerPatient(sqlite3* db) {
                  "NextOfKinTelNo TEXT NOT NULL,"
                  "PatientTelNo TEXT NOT NULL,"
                  "Location TEXT NOT NULL,"
-                 "registrationDate TEXT DEFAULT CURRENT_TIMESTAMP"
+                 "registrationDate DATETIME DEFAULT CURRENT_TIMESTAMP"
                  ");";
 
     int rc = sqlite3_exec(db, sql.c_str(), 0, 0, &errMsg);
@@ -220,7 +217,6 @@ void registerPatient(sqlite3* db) {
         cout << "Patient registered successfully!" << endl;
     }
 }
-
 // Admin code:
 void adminMenu(sqlite3* db) {
     vector<string> adminMenuOptions = {
@@ -270,7 +266,7 @@ void adminMenu(sqlite3* db) {
                     break;
                 case 3:
                     // Call function for Option 3
-                    lastChoice = "Admin Option 3 selected";
+                    viewPatientRecords(db);
                     break;
                 case 4:
                     // Call function for Option 4
@@ -304,7 +300,7 @@ void staffReg(sqlite3* db) {
             fName TEXT NOT NULL,
             lName TEXT NOT NULL,
             specialization TEXT NOT NULL,
-            salary REAL NOT NULL,
+            salary INTEGER NOT NULL,
             idNumber INTEGER NOT NULL,
             age INTEGER NOT NULL,
             telNo TEXT NOT NULL,
@@ -371,7 +367,7 @@ void staffReg(sqlite3* db) {
     sqlite3_bind_text(stmt, 3, fName.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 4, lName.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 5, specialization.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_double(stmt, 6, salary);
+    sqlite3_bind_int(stmt, 6, salary);
     sqlite3_bind_int(stmt, 7, idNumber);
     sqlite3_bind_int(stmt, 8, age);
     sqlite3_bind_text(stmt, 9, telNo.c_str(), -1, SQLITE_TRANSIENT);
@@ -391,11 +387,37 @@ void staffReg(sqlite3* db) {
 
 
 // View staff records:
+void printRecords(const vector<string>& menu) {
+    system("cls"); // Clear the console
+    cout << "\033[1m"; // Set text to bold
+
+    // Print table header
+    cout << left << setw(5) << "ID" 
+         << left << setw(15) << "Username" 
+         << left << setw(15) << "First Name" 
+         << left << setw(15) << "Last Name" 
+         << left << setw(20) << "Specialization" 
+         << left << setw(10) << "Salary" 
+         << left << setw(5) << "Age" 
+         << left << setw(15) << "Telephone" 
+         << left << setw(15) << "Location" 
+         << left << setw(15) << "Hire Date" 
+         << endl;
+
+    cout << string(130, '=') << endl; // Print a separator line
+
+    // Print each record
+    for (const auto& record : menu) {
+        cout << record << endl;
+    }
+
+    cout << "\033[0m"; // Reset text formatting
+}
 
 void viewStaffRecords(sqlite3* db) {
     const char* sql = "SELECT * FROM staff";
     sqlite3_stmt* stmt;
-    vector<string> records;
+    vector<string> menu;
 
     int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
     if (rc != SQLITE_OK) {
@@ -403,25 +425,102 @@ void viewStaffRecords(sqlite3* db) {
         return;
     }
 
-    cout << "Staff Records:" << endl;
     while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
-        string record = "ID: " + to_string(sqlite3_column_int(stmt, 0)) +
-                        ", Username: " + reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)) +
-                        ", First Name: " + reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3)) +
-                        ", Last Name: " + reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4)) +
-                        ", Specialization: " + reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5)) +
-                        ", Salary: " + to_string(sqlite3_column_double(stmt, 6)) +
-                        ", Age: " + to_string(sqlite3_column_int(stmt, 8)) +
-                        ", Telephone: " + reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9)) +
-                        ", Location: " + reinterpret_cast<const char*>(sqlite3_column_text(stmt, 10)) +
-                        ", Hire Date: " + reinterpret_cast<const char*>(sqlite3_column_text(stmt, 11));
-        records.push_back(record);
+        stringstream record;
+        record << left << setw(5) << sqlite3_column_int(stmt, 0)
+               << left << setw(15) << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))
+               << left << setw(15) << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3))
+               << left << setw(15) << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4))
+               << left << setw(20) << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5))
+               << left << setw(10) << to_string(sqlite3_column_int(stmt, 6))
+               << left << setw(5) << to_string(sqlite3_column_int(stmt, 8))
+               << left << setw(15) << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9))
+               << left << setw(15) << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 10))
+               << left << setw(15) << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 11));
+        menu.push_back(record.str());
     }
 
     sqlite3_finalize(stmt);
 
-    for (const auto& record : records) {
+    while (true) {
+        printRecords(menu);
+        cout<<endl;
+        cout<<endl;
+        cout << "==|| Press 'b' to go back to the Admin menu: ||=="<<endl;
+        char choice;
+        cin >> choice;
+        if (choice == 'b' || choice == 'B') {
+            break;
+        }
+    }
+}
+
+// Patients records:
+void printPatientRecords(const vector<string>& menu) {
+    system("cls"); // Clear the console
+    cout << "\033[1m"; // Set text to bold
+
+    // Print table header
+    cout << left << setw(5) << "ID" 
+         << left << setw(15) << "First Name" 
+         << left << setw(15) << "Last Name" 
+         << left << setw(5) << "Age" 
+         << left << setw(10) << "Sex" 
+         << left << setw(20) << "Allergies" 
+         << left << setw(15) << "Next of Kin Tel" 
+         << left << setw(15) << " Patient Tel" 
+         << left << setw(15) << "Location" 
+         << left << setw(20) << "Registration Date" 
+         << endl;
+
+    cout << string(135, '=') << endl; // Print a separator line
+
+    // Print each record
+    for (const auto& record : menu) {
         cout << record << endl;
+    }
+
+    cout << "\033[0m"; // Reset text formatting
+}
+
+void viewPatientRecords(sqlite3* db) {
+    const char* sql = "SELECT * FROM Patients";
+    sqlite3_stmt* stmt;
+    vector<string> menu;
+
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+    if (rc != SQLITE_OK) {
+        cerr << "SQL error (retrieving records): " << sqlite3_errmsg(db) << endl;
+        return;
+    }
+
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        stringstream record;
+        record << left << setw(5) << sqlite3_column_int(stmt, 0)  // ID
+               << left << setw(15) << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))  // fName
+               << left << setw(15) << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2))  // lName
+               << left << setw(5) << sqlite3_column_int(stmt, 3)  // Age
+               << left << setw(10) << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4))  // Sex
+               << left << setw(20) << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5))  // Allergies
+               << left << setw(15) << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6))  // NextOfKinTelNo
+               << left << setw(15) << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7))  // PatientTelNo
+               << left << setw(15) << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8))  // Location
+               << left << setw(20) << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9)); // registrationDate
+        menu.push_back(record.str());
+    }
+
+    sqlite3_finalize(stmt);
+
+    while (true) {
+        printPatientRecords(menu);
+        cout << endl;
+        cout << endl;
+        cout << "==|| Press 'b' to go back to the Admin menu: ||==" << endl;
+        char choice;
+        cin >> choice;
+        if (choice == 'b' || choice == 'B') {
+            break;
+        }
     }
 }
 // Main function code
