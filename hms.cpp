@@ -13,7 +13,7 @@ using namespace std;
 // Function prototypes
 bool authenticateAdmin(const string &username, const string &password);
 void adminMenu(sqlite3 *db);
-void doctorMenu(sqlite3 *db);
+void doctorMenu(sqlite3* db, int doctorID);
 void receptionistMenu(sqlite3 *db);
 void registerPatient(sqlite3 *db);
 void staffReg(sqlite3 *db);
@@ -24,7 +24,12 @@ void viewPatientRecords(sqlite3 *db);
 void createAppointment(sqlite3 *db, string &errorMessage); // Updated prototype
 int authenticateUser(sqlite3 *db, const string &username, const string &password, const string &specialization);
 void viewDoctorAppointments(sqlite3 *db, int doctorID); // Declare the function here
-void tendToAppointment(sqlite3 *db, int appointmentID);
+void tendToAppointment(sqlite3* db, int appointmentID, int doctorID); 
+void viewBilling(sqlite3 *db);
+string verifyPayment(sqlite3 *db, int patientID);
+void financialAnalysis(sqlite3 *db);
+void createAppointmentsTable(sqlite3 *db);
+
 
 // padding center
 void printCentered(const string &text, int consoleWidth)
@@ -94,6 +99,62 @@ int authenticateUser(sqlite3 *db, const string &username, const string &password
     return doctorID;
 }
 
+
+// Access patient records
+void viewDiagnoses(sqlite3 *db) {
+    const char *sql = "SELECT ID, DoctorName, PatientName, Diagnosis, Prescription FROM Diagnoses";
+    sqlite3_stmt *stmt;
+    vector<string> diagnoses;
+
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+    if (rc != SQLITE_OK) {
+        cerr << "SQL error (retrieving diagnoses): " << sqlite3_errmsg(db) << endl;
+        return;
+    }
+
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        stringstream diagnosis;
+        diagnosis << left << setw(5) << sqlite3_column_int(stmt, 0)
+                  << left << setw(20) << reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1))
+                  << left << setw(20) << reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2))
+                  << left << setw(30) << reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3))
+                  << left << setw(30) << reinterpret_cast<const char *>(sqlite3_column_text(stmt, 4));
+        diagnoses.push_back(diagnosis.str());
+    }
+
+    sqlite3_finalize(stmt);
+
+    while (true) {
+        system("cls");     // Clear the console
+        cout << "\033[1m"; // Set text to bold
+
+        // Print table header
+        cout << left << setw(5) << "ID"
+             << left << setw(20) << "Doctor Name"
+             << left << setw(20) << "Patient Name"
+             << left << setw(30) << "Diagnosis"
+             << left << setw(30) << "Prescription"
+             << endl;
+
+        cout << string(105, '=') << endl; // Print a separator line
+
+        // Print each diagnosis
+        for (const auto &diagnosis : diagnoses) {
+            cout << diagnosis << endl;
+        }
+
+        cout << "\033[0m"; // Reset text formatting
+
+        cout << endl;
+        cout << "==|| Press 'b' to go back to the Doctor menu ||==" << endl;
+        char choice;
+        cin >> choice;
+        if (choice == 'b' || choice == 'B') {
+            break;
+        }
+    }
+}
+
 // Function to print appointments
 void printAppointments(const vector<string> &appointments)
 {
@@ -118,57 +179,52 @@ void printAppointments(const vector<string> &appointments)
     cout << "\033[0m"; // Reset text formatting
 }
 
+
+
+
 // Function to view appointments for a specific doctor
-void viewDoctorAppointments(sqlite3 *db, int doctorID)
-{
-    const char *sql = "SELECT ID, AppointmentDate, AppointmentTime, PatientName FROM Appointments WHERE DoctorID = ?";
-    sqlite3_stmt *stmt;
+void viewDoctorAppointments(sqlite3* db, int doctorID) {
+    const char* sql = "SELECT ID, AppointmentDate, AppointmentTime, PatientName FROM Appointments WHERE DoctorID = ?";
+    sqlite3_stmt* stmt;
     vector<string> appointments;
 
     int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
-    if (rc != SQLITE_OK)
-    {
+    if (rc != SQLITE_OK) {
         cerr << "SQL error (retrieving appointments): " << sqlite3_errmsg(db) << endl;
         return;
     }
 
     sqlite3_bind_int(stmt, 1, doctorID);
 
-    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW)
-    {
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
         stringstream appointment;
         appointment << left << setw(5) << sqlite3_column_int(stmt, 0)
-                    << left << setw(20) << reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1))
-                    << left << setw(15) << reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2))
-                    << left << setw(20) << reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3));
+                    << left << setw(20) << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))
+                    << left << setw(15) << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2))
+                    << left << setw(20) << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
         appointments.push_back(appointment.str());
     }
 
     sqlite3_finalize(stmt);
 
-    while (true)
-    {
+    while (true) {
         printAppointments(appointments);
         cout << endl;
         cout << "==|| Press 'b' to go back to the Doctor menu ||==" << endl;
         cout << "==|| Enter the ID of the appointment to tend to: ||==" << endl;
         char choice;
         cin >> choice;
-        if (choice == 'b' || choice == 'B')
-        {
+        if (choice == 'b' || choice == 'B') {
             break;
-        }
-        else
-        {
+        } else {
             int appointmentID = choice - '0'; // Convert char to int
-            tendToAppointment(db, appointmentID);
+            tendToAppointment(db, appointmentID, doctorID); // Updated call
         }
     }
 }
 
 // Function to tend to an appointment
-// Function to tend to an appointment
-void tendToAppointment(sqlite3 *db, int appointmentID) {
+void tendToAppointment(sqlite3 *db, int appointmentID, int doctorID) {
     const char *sql = "SELECT AppointmentDate, AppointmentTime, PatientName, DoctorID, DoctorName FROM Appointments WHERE ID = ?";
     sqlite3_stmt *stmt;
     int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
@@ -184,7 +240,6 @@ void tendToAppointment(sqlite3 *db, int appointmentID) {
         string appointmentDate = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 0));
         string appointmentTime = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
         string patientName = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
-        int doctorID = sqlite3_column_int(stmt, 3);
         string doctorName = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 4));
         cout << "Tending to appointment:" << endl;
         cout << "Date: " << appointmentDate << ", Time: " << appointmentTime << ", Patient: " << patientName << endl;
@@ -248,77 +303,90 @@ void tendToAppointment(sqlite3 *db, int appointmentID) {
         }
 
         sqlite3_finalize(stmt);
+
+        // Remove the appointment from the Appointments table
+        const char *deleteSQL = "DELETE FROM Appointments WHERE ID = ?";
+        rc = sqlite3_prepare_v2(db, deleteSQL, -1, &stmt, 0);
+        if (rc != SQLITE_OK) {
+            cerr << "SQL error (prepare delete statement): " << sqlite3_errmsg(db) << endl;
+            return;
+        }
+
+        sqlite3_bind_int(stmt, 1, appointmentID);
+
+        rc = sqlite3_step(stmt);
+        if (rc != SQLITE_DONE) {
+            cerr << "SQL error (deleting appointment): " << sqlite3_errmsg(db) << endl;
+        } else {
+            cout << "Appointment removed successfully!" << endl;
+        }
+
+        sqlite3_finalize(stmt);
     } else {
         cout << "Appointment not found." << endl;
     }
 
     sqlite3_finalize(stmt);
 
-    // Return to the doctor's menu
-    return;
+    // Return to viewDoctorAppointments
+    viewDoctorAppointments(db, doctorID);
 }
 
-// Doctor's code:
-void doctorMenu(sqlite3 *db, int doctorID)
-{
+
+// Doctor's menu
+void doctorMenu(sqlite3 *db, int doctorID) {
     vector<string> doctorMenuOptions = {
         "Doctor's Appointments:",
         "1. Access Patients Records",
         "2. View My Appointments",
-        "3. Back to Main Menu"};
+        "3. Back to Main Menu"
+    };
 
     int choice = 0;
     string lastChoice; // Variable to store the last selected option
     string errorMessage;
 
-    while (choice != 3)
-    {
+    while (true) {
         printMenu(doctorMenuOptions);
 
-        if (!errorMessage.empty())
-        {
-            cout << "\033[31m" << errorMessage << "\033[0m" << endl; // Print error message in red
+        if (!errorMessage.empty()) {
+            cout << "Error: " << errorMessage << endl;
+            errorMessage.clear();
         }
 
-        if (!lastChoice.empty())
-        {
-            cout << lastChoice << endl;
+        if (!lastChoice.empty()) {
+            cout << "Last choice: " << lastChoice << endl;
+            lastChoice.clear();
         }
 
+        cout << "Enter your choice: ";
         cin >> choice;
 
-        if (cin.fail())
-        { // Check if the input is invalid
-            errorMessage = "Your choice is invalid";
-            cin.clear();                                         // Clear the error flag
-            cin.ignore(numeric_limits<streamsize>::max(), '\n'); // Discard invalid input
-            choice = 0;                                          // Reset choice to continue the loop
+        if (cin.fail()) {
+            cin.clear();
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+            errorMessage = "Invalid input. Please enter a number.";
+            continue;
         }
-        else if (choice < 1 || choice > 3)
-        {
-            errorMessage = "Invalid choice. Please choose 1, 2, or 3.";
-        }
-        else
-        {
-            errorMessage.clear(); // Clear the error message if the input is valid
-            // Store the last valid choice
 
-            switch (choice)
-            {
+        if (choice < 1 || choice > 3) {
+            errorMessage = "Invalid choice. Please select a valid option.";
+            continue;
+        }
+
+        switch (choice) {
             case 1:
-                // Call function for Option 1
-                lastChoice = "Doctor Option 1 selected";
+               // View Diagnoses
+                viewDiagnoses(db);
                 break;
             case 2:
-                // View appointments for this doctor
+                // View My Appointments
                 viewDoctorAppointments(db, doctorID);
-
                 break;
             case 3:
-                // Go back to main menu
+                // Back to Main Menu
                 lastChoice = "Returning to main menu";
                 return;
-            }
         }
     }
 }
@@ -326,18 +394,6 @@ void doctorMenu(sqlite3 *db, int doctorID)
 // Receptionist code:
 void receptionistMenu(sqlite3 *db)
 {
-    string username, password;
-    cout << "Enter receptionist username: ";
-    cin >> username;
-    cout << "Enter receptionist password: ";
-    cin >> password;
-
-    if (authenticateUser(db, username, password, "receptionist") == -1)
-    {
-        cout << "\033[31mAuthentication failed\033[0m" << endl;
-        return;
-    }
-
     vector<string> receptionistMenuOptions = {
         "Receptionist Menu:",
         "1. Patient registration",
@@ -349,7 +405,7 @@ void receptionistMenu(sqlite3 *db)
     string lastChoice; // Variable to store the last selected option
     string errorMessage;
 
-    while (choice != 4)
+    while (true)
     {
         printMenu(receptionistMenuOptions);
 
@@ -363,6 +419,7 @@ void receptionistMenu(sqlite3 *db)
             cout << lastChoice << endl;
         }
 
+        cout << "Enter your choice: ";
         cin >> choice;
 
         if (cin.fail())
@@ -388,7 +445,8 @@ void receptionistMenu(sqlite3 *db)
                 createAppointment(db, errorMessage); // Pass the error message reference
                 break;
             case 3:
-                // Other cases...
+                // Billing & Payments
+                viewBilling(db);
                 break;
             case 4:
                 // Go back to main menu
@@ -397,6 +455,153 @@ void receptionistMenu(sqlite3 *db)
             }
         }
     }
+}
+
+
+
+
+// View billing
+void viewBilling(sqlite3 *db) {
+    const char *sql = "SELECT ID, PatientName, Bill FROM Diagnoses";
+    sqlite3_stmt *stmt;
+    vector<string> billing;
+    string message;
+
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+    if (rc != SQLITE_OK) {
+        cerr << "SQL error (retrieving billing): " << sqlite3_errmsg(db) << endl;
+        return;
+    }
+
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        stringstream bill;
+        bill << left << setw(5) << sqlite3_column_int(stmt, 0)
+             << left << setw(30) << reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1))
+             << left << setw(10) << sqlite3_column_double(stmt, 2);
+        billing.push_back(bill.str());
+    }
+
+    sqlite3_finalize(stmt);
+
+    while (true) {
+        system("cls");     // Clear the console
+        cout << "\033[1m"; // Set text to bold
+
+        // Print table header
+        cout << left << setw(5) << "ID"
+             << left << setw(30) << "Patient Name"
+             << left << setw(10) << "Bill"
+             << endl;
+
+        cout << string(45, '=') << endl; // Print a separator line
+
+        // Print each billing record
+        for (const auto &bill : billing) {
+            cout << bill << endl;
+        }
+
+        cout << "\033[0m"; // Reset text formatting
+
+        if (!message.empty()) {
+            cout << message << endl;
+            message.clear();
+        }
+
+        cout << endl;
+        cout << "==|| Press 'b' to go back to the Receptionist menu ||==" << endl;
+        cout << "==|| Enter the ID of the patient to verify payment: ||==" << endl;
+        char choice;
+        cin >> choice;
+        if (choice == 'b' || choice == 'B') {
+            break;
+        } else {
+            int patientID = choice - '0'; // Convert char to int
+            message = verifyPayment(db, patientID); // Verify payment and store the message
+        }
+    }
+}
+
+
+// Verify payment
+string verifyPayment(sqlite3 *db, int patientID) {
+    const char *selectSQL = "SELECT Bill FROM Diagnoses WHERE ID = ?";
+    sqlite3_stmt *stmt;
+    double billAmount = 0.0;
+    string message;
+
+    int rc = sqlite3_prepare_v2(db, selectSQL, -1, &stmt, 0);
+    if (rc != SQLITE_OK) {
+        cerr << "SQL error (preparing select statement): " << sqlite3_errmsg(db) << endl;
+        return "\033[31mSQL error (preparing select statement)\033[0m"; // Red text
+    }
+
+    sqlite3_bind_int(stmt, 1, patientID);
+
+    rc = sqlite3_step(stmt);
+    if (rc == SQLITE_ROW) {
+        billAmount = sqlite3_column_double(stmt, 0);
+    } else {
+        cerr << "Error: Patient ID not found." << endl;
+        sqlite3_finalize(stmt);
+        return "\033[31mError: Patient ID not found\033[0m"; // Red text
+    }
+
+    sqlite3_finalize(stmt);
+
+    // Create PaidBills table if it doesn't exist
+    const char *createTableSQL = R"sql(
+        CREATE TABLE IF NOT EXISTS PaidBills (
+            ID INTEGER PRIMARY KEY,
+            BillPaid REAL NOT NULL
+        );
+    )sql";
+
+    rc = sqlite3_exec(db, createTableSQL, 0, 0, 0);
+    if (rc != SQLITE_OK) {
+        cerr << "SQL error (creating PaidBills table): " << sqlite3_errmsg(db) << endl;
+        return "\033[31mSQL error (creating PaidBills table)\033[0m"; // Red text
+    }
+
+    // Check if the payment record already exists
+    const char *checkSQL = "SELECT COUNT(*) FROM PaidBills WHERE ID = ?";
+    rc = sqlite3_prepare_v2(db, checkSQL, -1, &stmt, 0);
+    if (rc != SQLITE_OK) {
+        cerr << "SQL error (preparing check statement): " << sqlite3_errmsg(db) << endl;
+        return "\033[31mSQL error (preparing check statement)\033[0m"; // Red text
+    }
+
+    sqlite3_bind_int(stmt, 1, patientID);
+
+    rc = sqlite3_step(stmt);
+    if (rc == SQLITE_ROW && sqlite3_column_int(stmt, 0) > 0) {
+        cerr << "Error: Payment record already exists for this patient ID." << endl;
+        sqlite3_finalize(stmt);
+        return "\033[31mError: Payment record already exists for this patient ID\033[0m"; // Red text
+    }
+
+    sqlite3_finalize(stmt);
+
+    // Insert payment data into PaidBills table
+    const char *insertSQL = "INSERT INTO PaidBills (ID, BillPaid) VALUES (?, ?)";
+    rc = sqlite3_prepare_v2(db, insertSQL, -1, &stmt, 0);
+    if (rc != SQLITE_OK) {
+        cerr << "SQL error (preparing insert statement): " << sqlite3_errmsg(db) << endl;
+        return "\033[31mSQL error (preparing insert statement)\033[0m"; // Red text
+    }
+
+    sqlite3_bind_int(stmt, 1, patientID);
+    sqlite3_bind_double(stmt, 2, billAmount);
+
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        cerr << "SQL error (inserting payment): " << sqlite3_errmsg(db) << endl;
+        message = "\033[31mSQL error (inserting payment)\033[0m"; // Red text
+    } else {
+        message = "\033[32mPayment verified and recorded successfully!\033[0m"; // Green text
+    }
+
+    sqlite3_finalize(stmt);
+    return message;
 }
 
 // Register patients
@@ -469,9 +674,38 @@ bool parseDateTime(const std::string &dateTimeStr, struct tm &tm)
     return !ss.fail();
 }
 
+
+void createAppointmentsTable(sqlite3 *db)
+{
+    const char *sql = R"sql(
+        CREATE TABLE IF NOT EXISTS Appointments(
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            DoctorID INTEGER NOT NULL,
+            DoctorName TEXT NOT NULL,
+            PatientID INTEGER NOT NULL UNIQUE,
+            PatientName TEXT NOT NULL,
+            AppointmentDate TEXT NOT NULL,
+            AppointmentTime TEXT NOT NULL,
+            FOREIGN KEY(DoctorID) REFERENCES staff(ID),
+            FOREIGN KEY(PatientID) REFERENCES Patients(ID)
+        );
+    )sql";
+
+    char *errMsg = 0;
+    int rc = sqlite3_exec(db, sql, 0, 0, &errMsg);
+    if (rc != SQLITE_OK)
+    {
+        cerr << "SQL error (creating appointments table): " << errMsg << endl;
+        sqlite3_free(errMsg);
+    }
+}
+
 // Book Appointment
 void createAppointment(sqlite3 *db, string &errorMessage)
 {
+    // Ensure the Appointments table exists
+    createAppointmentsTable(db);
+
     const char *sql = "SELECT ID, fName, lName, specialization FROM staff WHERE specialization != 'receptionist'";
     sqlite3_stmt *stmt;
     vector<string> doctors;
@@ -519,19 +753,20 @@ void createAppointment(sqlite3 *db, string &errorMessage)
         }
 
         int doctorID;
-        string doctorName;
         cout << "Enter the ID of the doctor for the appointment: ";
         cin >> doctorID;
 
-        // Check if the doctor exists
+        // Check if the doctor exists and retrieve the doctor's name
+        string doctorName;
         bool doctorExists = false;
         for (const auto &doctor : doctors)
         {
             if (doctor.find("ID: " + to_string(doctorID)) != string::npos)
             {
-                doctorName = doctor.substr(doctor.find("Name: ") + 6);
-                doctorName = doctorName.substr(0, doctorName.find(","));
                 doctorExists = true;
+                size_t nameStart = doctor.find("Name: ") + 6;
+                size_t nameEnd = doctor.find(", Specialization:");
+                doctorName = doctor.substr(nameStart, nameEnd - nameStart);
                 break;
             }
         }
@@ -539,7 +774,7 @@ void createAppointment(sqlite3 *db, string &errorMessage)
         if (!doctorExists)
         {
             errorMessage = "Error: Doctor with ID " + to_string(doctorID) + " does not exist.";
-            return;
+            continue;
         }
 
         // Retrieve patients from the Patients table
@@ -576,18 +811,19 @@ void createAppointment(sqlite3 *db, string &errorMessage)
         }
 
         int patientID;
-        string patientName;
         cout << "Enter the ID of the patient for the appointment: ";
         cin >> patientID;
 
-        // Check if the patient exists
+        // Check if the patient exists and retrieve the patient's name
+        string patientName;
         bool patientExists = false;
         for (const auto &patient : patients)
         {
             if (patient.find("ID: " + to_string(patientID)) != string::npos)
             {
-                patientName = patient.substr(patient.find("Name: ") + 6);
                 patientExists = true;
+                size_t nameStart = patient.find("Name: ") + 6;
+                patientName = patient.substr(nameStart);
                 break;
             }
         }
@@ -595,7 +831,7 @@ void createAppointment(sqlite3 *db, string &errorMessage)
         if (!patientExists)
         {
             errorMessage = "Error: Patient with ID " + to_string(patientID) + " does not exist.";
-            return;
+            continue;
         }
 
         // Check if the patient already has an appointment
@@ -613,7 +849,7 @@ void createAppointment(sqlite3 *db, string &errorMessage)
         {
             errorMessage = "Error: This patient already has an appointment.";
             sqlite3_finalize(stmt);
-            return;
+            continue;
         }
         sqlite3_finalize(stmt);
 
@@ -629,7 +865,7 @@ void createAppointment(sqlite3 *db, string &errorMessage)
         if (!parseDateTime(appointmentDate + " " + appointmentTime, tm))
         {
             errorMessage = "Error: Invalid date/time format.";
-            return;
+            continue;
         }
 
         // Check if the date/time is in the past
@@ -638,7 +874,7 @@ void createAppointment(sqlite3 *db, string &errorMessage)
         if (difftime(appointmentTimeT, now) < 0)
         {
             errorMessage = "Error: Appointment date/time is in the past.";
-            return;
+            continue;
         }
 
         // Check if the appointment slot is already taken
@@ -657,29 +893,9 @@ void createAppointment(sqlite3 *db, string &errorMessage)
         {
             errorMessage = "Error: This appointment slot is already taken.";
             sqlite3_finalize(stmt);
-            return; // Terminate the loop and return to the receptionist menu
+            continue;
         }
         sqlite3_finalize(stmt);
-
-        sql = "CREATE TABLE IF NOT EXISTS Appointments("
-              "ID INTEGER PRIMARY KEY AUTOINCREMENT,"
-              "DoctorID INTEGER NOT NULL,"
-              "DoctorName TEXT NOT NULL,"
-              "PatientID INTEGER NOT NULL UNIQUE," // Unique constraint on PatientID
-              "PatientName TEXT NOT NULL,"
-              "AppointmentDate TEXT NOT NULL,"
-              "AppointmentTime TEXT NOT NULL,"
-              "FOREIGN KEY(DoctorID) REFERENCES staff(ID),"
-              "FOREIGN KEY(PatientID) REFERENCES Patients(ID)"
-              ");";
-
-        rc = sqlite3_exec(db, sql, 0, 0, &errMsg);
-        if (rc != SQLITE_OK)
-        {
-            cerr << "SQL error (creating appointments table): " << errMsg << endl;
-            sqlite3_free(errMsg);
-            return;
-        }
 
         stringstream insertSql;
         insertSql << "INSERT INTO Appointments (DoctorID, DoctorName, PatientID, PatientName, AppointmentDate, AppointmentTime) VALUES ("
@@ -700,73 +916,59 @@ void createAppointment(sqlite3 *db, string &errorMessage)
 }
 
 // Admin code:
-void adminMenu(sqlite3 *db)
-{
+void adminMenu(sqlite3 *db) {
     vector<string> adminMenuOptions = {
         "Admin Menu:",
         "1. Register Staff",
         "2. Staff Records",
         "3. Patient Records",
         "4. Financial Analysis",
-        "5. Back to Main Menu"};
+        "5. Back to Main Menu"
+    };
 
     int choice = 0;
     string lastChoice; // Variable to store the last selected option
     string errorMessage;
 
-    while (choice != 5)
-    {
+    while (true) {
         printMenu(adminMenuOptions);
 
-        if (!errorMessage.empty())
-        {
+        if (!errorMessage.empty()) {
             cout << "\033[31m" << errorMessage << "\033[0m" << endl; // Print error message in red
         }
 
-        if (!lastChoice.empty())
-        {
+        if (!lastChoice.empty()) {
             cout << lastChoice << endl;
         }
 
+        cout << "Enter your choice: ";
         cin >> choice;
 
-        if (cin.fail())
-        { // Check if the input is invalid
+        if (cin.fail()) {
+            cin.clear();
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
             errorMessage = "Your choice is invalid";
-            cin.clear();                                         // Clear the error flag
-            cin.ignore(numeric_limits<streamsize>::max(), '\n'); // Discard invalid input
-            choice = 0;                                          // Reset choice to continue the loop
-        }
-        else if (choice < 1 || choice > 5)
-        {
+            choice = 0;
+        } else if (choice < 1 || choice > 5) {
             errorMessage = "Invalid choice. Please choose 1, 2, 3, 4, or 5.";
-        }
-        else
-        {
+        } else {
             errorMessage.clear(); // Clear the error message if the input is valid
-            // Store the last valid choice
-
-            switch (choice)
-            {
-            case 1:
-                staffReg(db);
-                break;
-            case 2:
-                // Call function for Option 2
-                viewStaffRecords(db);
-                break;
-            case 3:
-                // Call function for Option 3
-                viewPatientRecords(db);
-                break;
-            case 4:
-                // Call function for Option 4
-                lastChoice = "Admin Option 4 selected";
-                break;
-            case 5:
-                // Go back to main menu
-                lastChoice = "Returning to main menu";
-                return;
+            switch (choice) {
+                case 1:
+                    staffReg(db);
+                    break;
+                case 2:
+                    viewStaffRecords(db);
+                    break;
+                case 3:
+                    viewPatientRecords(db);
+                    break;
+                case 4:
+                    financialAnalysis(db);
+                    break;
+                case 5:
+                    lastChoice = "Returning to main menu";
+                    return;
             }
         }
     }
@@ -1033,6 +1235,115 @@ void viewPatientRecords(sqlite3 *db)
         {
             break;
         }
+    }
+}
+
+// Financial analysis:
+void financialAnalysis(sqlite3 *db) {
+    const int investedMoney = 10000000;
+    const int tax = 100000;
+    const char *sql = "SELECT SUM(salary) FROM staff";
+    sqlite3_stmt *stmt;
+    int totalSalary = 0;
+
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+    if (rc != SQLITE_OK) {
+        cerr << "SQL error (retrieving total salary): " << sqlite3_errmsg(db) << endl;
+        return;
+    }
+
+    rc = sqlite3_step(stmt);
+    if (rc == SQLITE_ROW) {
+        totalSalary = sqlite3_column_int(stmt, 0);
+    } else {
+        cerr << "Error: Could not retrieve total salary." << endl;
+        sqlite3_finalize(stmt);
+        return;
+    }
+
+    sqlite3_finalize(stmt);
+
+    int profit = investedMoney - (totalSalary + tax);
+
+    // Create FinancialAnalysis table if it doesn't exist
+    const char *createTableSQL = R"sql(
+        CREATE TABLE IF NOT EXISTS FinancialAnalysis (
+            Year INTEGER PRIMARY KEY,
+            InvestedMoney INTEGER NOT NULL,
+            TotalSalary INTEGER NOT NULL,
+            Tax INTEGER NOT NULL,
+            Profit INTEGER NOT NULL
+        );
+    )sql";
+
+    rc = sqlite3_exec(db, createTableSQL, 0, 0, 0);
+    if (rc != SQLITE_OK) {
+        cerr << "SQL error (creating FinancialAnalysis table): " << sqlite3_errmsg(db) << endl;
+        return;
+    }
+
+    // Insert financial data into FinancialAnalysis table
+    const char *insertSQL = "INSERT INTO FinancialAnalysis (Year, InvestedMoney, TotalSalary, Tax, Profit) VALUES (strftime('%Y', 'now'), ?, ?, ?, ?)";
+    rc = sqlite3_prepare_v2(db, insertSQL, -1, &stmt, 0);
+    if (rc != SQLITE_OK) {
+        cerr << "SQL error (preparing insert statement): " << sqlite3_errmsg(db) << endl;
+        return;
+    }
+
+    sqlite3_bind_int(stmt, 1, investedMoney);
+    sqlite3_bind_int(stmt, 2, totalSalary);
+    sqlite3_bind_int(stmt, 3, tax);
+    sqlite3_bind_int(stmt, 4, profit);
+
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        cerr << "SQL error (inserting financial data): " << sqlite3_errmsg(db) << endl;
+    } else {
+        cout << "Financial analysis data recorded successfully!" << endl;
+    }
+
+    sqlite3_finalize(stmt);
+
+    // Display the financial analysis data
+    const char *selectSQL = "SELECT * FROM FinancialAnalysis";
+    rc = sqlite3_prepare_v2(db, selectSQL, -1, &stmt, 0);
+    if (rc != SQLITE_OK) {
+        cerr << "SQL error (retrieving financial analysis data): " << sqlite3_errmsg(db) << endl;
+        return;
+    }
+
+    system("cls");     // Clear the console
+    cout << "\033[1m"; // Set text to bold
+
+    // Print table header
+    cout << left << setw(10) << "Year"
+         << left << setw(15) << "Invested Money"
+         << left << setw(15) << "Total Salary"
+         << left << setw(10) << "Tax"
+         << left << setw(10) << "Profit"
+         << endl;
+
+    cout << string(60, '=') << endl; // Print a separator line
+
+    // Print each financial record
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        cout << left << setw(10) << sqlite3_column_int(stmt, 0)
+             << left << setw(15) << sqlite3_column_int(stmt, 1)
+             << left << setw(15) << sqlite3_column_int(stmt, 2)
+             << left << setw(10) << sqlite3_column_int(stmt, 3)
+             << left << setw(10) << sqlite3_column_int(stmt, 4)
+             << endl;
+    }
+
+    cout << "\033[0m"; // Reset text formatting
+
+    sqlite3_finalize(stmt);
+
+    cout << "==|| Press 'b' to go back to the Admin menu ||==" << endl;
+    char choice;
+    cin >> choice;
+    if (choice == 'b' || choice == 'B') {
+        return;
     }
 }
 
