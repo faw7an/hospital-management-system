@@ -6,6 +6,7 @@
 #include "sqlite3.h"
 #include <sstream>
 #include <iomanip> // Include for std::setw and std::left
+#include <ctime> // Include for time functions
 
 
 using namespace std;
@@ -21,6 +22,7 @@ void printMenu(const vector<string>& menu);
 string mainMenu(int choice, sqlite3* db);
 void viewStaffRecords(sqlite3* db);
 void viewPatientRecords(sqlite3* db);
+void createAppointment(sqlite3* db, string& errorMessage); // Updated prototype
 
 // padding center
 void printCentered(const string& text, int consoleWidth) {
@@ -140,15 +142,13 @@ void receptionistMenu(sqlite3* db) {
             errorMessage = "Invalid choice. Please choose 1, 2, 3, or 4.";
         } else {
             errorMessage.clear(); // Clear the error message if the input is valid
-            // Store the last valid choice
-
             switch (choice) {
                 case 1:
                     registerPatient(db);
                     lastChoice = "Patient registration";
                     break;
                 case 2:
-                    // Other cases...
+                    createAppointment(db, errorMessage); // Pass the error message reference
                     break;
                 case 3:
                     // Other cases...
@@ -217,6 +217,203 @@ void registerPatient(sqlite3* db) {
         cout << "Patient registered successfully!" << endl;
     }
 }
+
+
+bool parseDateTime(const std::string& dateTimeStr, struct tm& tm) {
+    std::istringstream ss(dateTimeStr);
+    ss >> std::get_time(&tm, "%Y-%m-%d %H:%M");
+    return !ss.fail();
+}
+
+// Book Appointment
+void createAppointment(sqlite3* db, string& errorMessage) {
+    const char* sql = "SELECT ID, fName, lName, specialization FROM staff WHERE specialization != 'receptionist'";
+    sqlite3_stmt* stmt;
+    vector<string> doctors;
+    char* errMsg = 0;
+
+    while (true) {
+        if (!errorMessage.empty()) {
+            cout << "\033[31m" << errorMessage << "\033[0m" << endl; // Display error message in red
+            cout << "Please try again." << endl;
+            errorMessage.clear(); // Clear the error message after displaying it
+        }
+
+        int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+        if (rc != SQLITE_OK) {
+            cerr << "SQL error (retrieving doctors): " << sqlite3_errmsg(db) << endl;
+            return;
+        }
+
+        doctors.clear();
+        cout << "Available Doctors:" << endl;
+        while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+            stringstream doctor;
+            doctor << "ID: " << sqlite3_column_int(stmt, 0) << ", "
+                   << "Name: " << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)) << " "
+                   << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2)) << ", "
+                   << "Specialization: " << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+            doctors.push_back(doctor.str());
+        }
+
+        sqlite3_finalize(stmt);
+
+        if (doctors.empty()) {
+            cout << "No doctors available." << endl;
+            return;
+        }
+
+        for (const auto& doctor : doctors) {
+            cout << doctor << endl;
+        }
+
+        int doctorID;
+        string doctorName;
+        cout << "Enter the ID of the doctor for the appointment: ";
+        cin >> doctorID;
+
+        // Retrieve the doctor's name
+        for (const auto& doctor : doctors) {
+            if (doctor.find("ID: " + to_string(doctorID)) != string::npos) {
+                doctorName = doctor.substr(doctor.find("Name: ") + 6);
+                doctorName = doctorName.substr(0, doctorName.find(","));
+                break;
+            }
+        }
+
+        // Retrieve patients from the Patients table
+        sql = "SELECT ID, fName, lName FROM Patients";
+        rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+        if (rc != SQLITE_OK) {
+            cerr << "SQL error (retrieving patients): " << sqlite3_errmsg(db) << endl;
+            return;
+        }
+
+        vector<string> patients;
+        cout << "Available Patients:" << endl;
+        while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+            stringstream patient;
+            patient << "ID: " << sqlite3_column_int(stmt, 0) << ", "
+                    << "Name: " << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)) << " "
+                    << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+            patients.push_back(patient.str());
+        }
+
+        sqlite3_finalize(stmt);
+
+        if (patients.empty()) {
+            cout << "No patients available." << endl;
+            return;
+        }
+
+        for (const auto& patient : patients) {
+            cout << patient << endl;
+        }
+
+        int patientID;
+        string patientName;
+        cout << "Enter the ID of the patient for the appointment: ";
+        cin >> patientID;
+
+        // Retrieve the patient's name
+        for (const auto& patient : patients) {
+            if (patient.find("ID: " + to_string(patientID)) != string::npos) {
+                patientName = patient.substr(patient.find("Name: ") + 6);
+                break;
+            }
+        }
+
+        // Check if the patient already has an appointment
+        sql = "SELECT COUNT(*) FROM Appointments WHERE PatientID = ?";
+        rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+        if (rc != SQLITE_OK) {
+            cerr << "SQL error (checking existing appointment): " << sqlite3_errmsg(db) << endl;
+            return;
+        }
+
+        sqlite3_bind_int(stmt, 1, patientID);
+        rc = sqlite3_step(stmt);
+        if (rc == SQLITE_ROW && sqlite3_column_int(stmt, 0) > 0) {
+            errorMessage = "Error: This patient already has an appointment.";
+            sqlite3_finalize(stmt);
+            return; 
+        }
+        sqlite3_finalize(stmt);
+
+        string appointmentDate, appointmentTime;
+        cout << "Enter appointment date (YYYY-MM-DD): ";
+        cin.ignore();
+        getline(cin, appointmentDate);
+        cout << "Enter appointment time (HH:MM): ";
+        getline(cin, appointmentTime);
+
+        // Validate date and time format
+        struct tm tm = {};
+        if (!parseDateTime(appointmentDate + " " + appointmentTime, tm)) {
+            errorMessage = "Error: Invalid date/time format.";
+            return;
+        }
+
+        // Check if the date/time is in the past
+        time_t now = time(0);
+        time_t appointmentTimeT = mktime(&tm);
+        if (difftime(appointmentTimeT, now) < 0) {
+            errorMessage = "Error: Appointment date/time is in the past.";
+            return;
+        }
+
+        // Check if the appointment slot is already taken
+        sql = "SELECT COUNT(*) FROM Appointments WHERE AppointmentDate = ? AND AppointmentTime = ?";
+        rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+        if (rc != SQLITE_OK) {
+            cerr << "SQL error (checking appointment slot): " << sqlite3_errmsg(db) << endl;
+            return;
+        }
+
+        sqlite3_bind_text(stmt, 1, appointmentDate.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, appointmentTime.c_str(), -1, SQLITE_TRANSIENT);
+        rc = sqlite3_step(stmt);
+        if (rc == SQLITE_ROW && sqlite3_column_int(stmt, 0) > 0) {
+            errorMessage = "Error: This appointment slot is already taken.";
+            sqlite3_finalize(stmt);
+            return; // Terminate the loop and return to the receptionist menu
+        }
+        sqlite3_finalize(stmt);
+
+        sql = "CREATE TABLE IF NOT EXISTS Appointments("
+              "ID INTEGER PRIMARY KEY AUTOINCREMENT,"
+              "DoctorID INTEGER NOT NULL,"
+              "DoctorName TEXT NOT NULL,"
+              "PatientID INTEGER NOT NULL UNIQUE," // Unique constraint on PatientID
+              "PatientName TEXT NOT NULL,"
+              "AppointmentDate TEXT NOT NULL,"
+              "AppointmentTime TEXT NOT NULL,"
+              "FOREIGN KEY(DoctorID) REFERENCES staff(ID),"
+              "FOREIGN KEY(PatientID) REFERENCES Patients(ID)"
+              ");";
+
+        rc = sqlite3_exec(db, sql, 0, 0, &errMsg);
+        if (rc != SQLITE_OK) {
+            cerr << "SQL error (creating appointments table): " << errMsg << endl;
+            sqlite3_free(errMsg);
+            return;
+        }
+
+        stringstream insertSql;
+        insertSql << "INSERT INTO Appointments (DoctorID, DoctorName, PatientID, PatientName, AppointmentDate, AppointmentTime) VALUES ("
+                  << doctorID << ", '" << doctorName << "', " << patientID << ", '" << patientName << "', '" << appointmentDate << "', '" << appointmentTime << "');";
+
+        rc = sqlite3_exec(db, insertSql.str().c_str(), 0, 0, &errMsg);
+        if (rc != SQLITE_OK) {
+            cerr << "SQL error (inserting appointment): " << errMsg << endl;
+            sqlite3_free(errMsg);
+        } else {
+            cout << "Appointment created successfully!" << endl;
+            break;
+        }
+    }
+}
+
 // Admin code:
 void adminMenu(sqlite3* db) {
     vector<string> adminMenuOptions = {
