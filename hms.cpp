@@ -23,6 +23,10 @@ string mainMenu(int choice, sqlite3* db);
 void viewStaffRecords(sqlite3* db);
 void viewPatientRecords(sqlite3* db);
 void createAppointment(sqlite3* db, string& errorMessage); // Updated prototype
+int authenticateUser(sqlite3* db, const string& username, const string& password, const string& specialization);
+void viewDoctorAppointments(sqlite3* db, int doctorID); // Declare the function here
+
+
 
 // padding center
 void printCentered(const string& text, int consoleWidth) {
@@ -52,22 +56,21 @@ void printMenu(const vector<string>& menu) {
 }
 
 // Authenticate user based on username, password, and specialization
-// Authenticate user based on username, password, and specialization
-bool authenticateUser(sqlite3* db, const string& username, const string& password, const string& specialization) {
+int authenticateUser(sqlite3* db, const string& username, const string& password, const string& specialization) {
     const char* sql;
     if (specialization == "doctor") {
         // Check for any specialization except "receptionist"
-        sql = "SELECT COUNT(*) FROM staff WHERE username = ? AND password = ? AND specialization != 'receptionist'";
+        sql = "SELECT ID FROM staff WHERE username = ? AND password = ? AND specialization != 'receptionist'";
     } else {
         // Check for specific specialization
-        sql = "SELECT COUNT(*) FROM staff WHERE username = ? AND password = ? AND specialization = ?";
+        sql = "SELECT ID FROM staff WHERE username = ? AND password = ? AND specialization = ?";
     }
 
     sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
     if (rc != SQLITE_OK) {
         cerr << "SQL error (preparing statement): " << sqlite3_errmsg(db) << endl;
-        return false;
+        return -1;
     }
 
     sqlite3_bind_text(stmt, 1, username.c_str(), -1, SQLITE_TRANSIENT);
@@ -77,29 +80,76 @@ bool authenticateUser(sqlite3* db, const string& username, const string& passwor
     }
 
     rc = sqlite3_step(stmt);
-    bool authenticated = (rc == SQLITE_ROW && sqlite3_column_int(stmt, 0) > 0);
+    int doctorID = (rc == SQLITE_ROW) ? sqlite3_column_int(stmt, 0) : -1;
 
     sqlite3_finalize(stmt);
-    return authenticated;
+    return doctorID;
+}
+// Function to print appointments
+void printAppointments(const vector<string>& appointments) {
+    system("cls"); // Clear the console
+    cout << "\033[1m"; // Set text to bold
+
+    // Print table header
+    cout << left << setw(5) << "ID" 
+         << left << setw(20) << "Appointment Date" 
+         << left << setw(15) << "Time" 
+         << left << setw(20) << "Name" 
+         << endl;
+
+    cout << string(60, '=') << endl; // Print a separator line
+
+    // Print each appointment
+    for (const auto& appointment : appointments) {
+        cout << appointment << endl;
+    }
+
+    cout << "\033[0m"; // Reset text formatting
 }
 
-// Doctor's code:
-void doctorMenu(sqlite3* db) {
-    string username, password;
-    cout << "Enter doctor username: ";
-    cin >> username;
-    cout << "Enter doctor password: ";
-    cin >> password;
+// Function to view appointments for a specific doctor
+void viewDoctorAppointments(sqlite3* db, int doctorID) {
+    const char* sql = "SELECT ID, AppointmentDate, AppointmentTime, PatientName FROM Appointments WHERE DoctorID = ?";
+    sqlite3_stmt* stmt;
+    vector<string> appointments;
 
-    if (!authenticateUser(db, username, password, "doctor")) {
-        cout << "\033[31mAuthentication failed\033[0m" << endl;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+    if (rc != SQLITE_OK) {
+        cerr << "SQL error (retrieving appointments): " << sqlite3_errmsg(db) << endl;
         return;
     }
 
+    sqlite3_bind_int(stmt, 1, doctorID);
+
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        stringstream appointment;
+        appointment << left << setw(5) << sqlite3_column_int(stmt, 0)
+                    << left << setw(20) << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))
+                    << left << setw(15) << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2))
+                    << left << setw(20) << reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        appointments.push_back(appointment.str());
+    }
+
+    sqlite3_finalize(stmt);
+
+    while (true) {
+        printAppointments(appointments);
+        cout << endl;
+        cout << "==|| Press 'b' to go back to the Doctor menu: ||==" << endl;
+        char choice;
+        cin >> choice;
+        if (choice == 'b' || choice == 'B') {
+            break;
+        }
+    }
+}
+
+// Doctor's code:
+void doctorMenu(sqlite3* db, int doctorID) {
     vector<string> doctorMenuOptions = {
         "Doctor's Appointments:",
         "1. Access Patients Records",
-        "2. Appointments",
+        "2. View My Appointments",
         "3. Back to Main Menu"
     };
 
@@ -137,8 +187,9 @@ void doctorMenu(sqlite3* db) {
                     lastChoice = "Doctor Option 1 selected";
                     break;
                 case 2:
-                    // Call function for Option 2
-                    lastChoice = "Doctor Option 2 selected";
+                    // View appointments for this doctor
+                    viewDoctorAppointments(db, doctorID);
+                    
                     break;
                 case 3:
                     // Go back to main menu
@@ -148,7 +199,6 @@ void doctorMenu(sqlite3* db) {
         }
     }
 }
-
 // Receptionist code:
 void receptionistMenu(sqlite3* db) {
     string username, password;
@@ -157,7 +207,7 @@ void receptionistMenu(sqlite3* db) {
     cout << "Enter receptionist password: ";
     cin >> password;
 
-    if (!authenticateUser(db, username, password, "receptionist")) {
+    if (authenticateUser(db, username, password, "receptionist") == -1) {
         cout << "\033[31mAuthentication failed\033[0m" << endl;
         return;
     }
@@ -216,6 +266,7 @@ void receptionistMenu(sqlite3* db) {
     }
 }
 
+// Register patients
 void registerPatient(sqlite3* db) {
     char* errMsg = 0;
     string sql = "CREATE TABLE IF NOT EXISTS Patients("
@@ -861,12 +912,33 @@ string mainMenu(int choice, sqlite3* db) {
                 return "Authentication failed";
             }
         }
-        case 2:
-            doctorMenu(db);
-            return "Doctor menu accessed";
-        case 3:
-            receptionistMenu(db);
-            return "Receptionist menu accessed";
+        case 2: {
+            string username, password;
+            cout << "Enter doctor username: ";
+            cin >> username;
+            cout << "Enter doctor password: ";
+            cin >> password;
+            int doctorID = authenticateUser(db, username, password, "doctor");
+            if (doctorID != -1) {
+                doctorMenu(db, doctorID);
+                return "Doctor menu accessed";
+            } else {
+                return "Authentication failed";
+            }
+        }
+        case 3: {
+            string username, password;
+            cout << "Enter receptionist username: ";
+            cin >> username;
+            cout << "Enter receptionist password: ";
+            cin >> password;
+            if (authenticateUser(db, username, password, "receptionist") != -1) {
+                receptionistMenu(db);
+                return "Receptionist menu accessed";
+            } else {
+                return "Authentication failed";
+            }
+        }
         case 4:
             return "Exiting...";
         default:
