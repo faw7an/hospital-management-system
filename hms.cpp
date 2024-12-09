@@ -51,9 +51,51 @@ void printMenu(const vector<string>& menu) {
     cout << "\033[0m"; // Reset text formatting
 }
 
+// Authenticate user based on username, password, and specialization
+// Authenticate user based on username, password, and specialization
+bool authenticateUser(sqlite3* db, const string& username, const string& password, const string& specialization) {
+    const char* sql;
+    if (specialization == "doctor") {
+        // Check for any specialization except "receptionist"
+        sql = "SELECT COUNT(*) FROM staff WHERE username = ? AND password = ? AND specialization != 'receptionist'";
+    } else {
+        // Check for specific specialization
+        sql = "SELECT COUNT(*) FROM staff WHERE username = ? AND password = ? AND specialization = ?";
+    }
+
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+    if (rc != SQLITE_OK) {
+        cerr << "SQL error (preparing statement): " << sqlite3_errmsg(db) << endl;
+        return false;
+    }
+
+    sqlite3_bind_text(stmt, 1, username.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, password.c_str(), -1, SQLITE_TRANSIENT);
+    if (specialization != "doctor") {
+        sqlite3_bind_text(stmt, 3, specialization.c_str(), -1, SQLITE_TRANSIENT);
+    }
+
+    rc = sqlite3_step(stmt);
+    bool authenticated = (rc == SQLITE_ROW && sqlite3_column_int(stmt, 0) > 0);
+
+    sqlite3_finalize(stmt);
+    return authenticated;
+}
 
 // Doctor's code:
 void doctorMenu(sqlite3* db) {
+    string username, password;
+    cout << "Enter doctor username: ";
+    cin >> username;
+    cout << "Enter doctor password: ";
+    cin >> password;
+
+    if (!authenticateUser(db, username, password, "doctor")) {
+        cout << "\033[31mAuthentication failed\033[0m" << endl;
+        return;
+    }
+
     vector<string> doctorMenuOptions = {
         "Doctor's Appointments:",
         "1. Access Patients Records",
@@ -106,8 +148,20 @@ void doctorMenu(sqlite3* db) {
         }
     }
 }
+
 // Receptionist code:
 void receptionistMenu(sqlite3* db) {
+    string username, password;
+    cout << "Enter receptionist username: ";
+    cin >> username;
+    cout << "Enter receptionist password: ";
+    cin >> password;
+
+    if (!authenticateUser(db, username, password, "receptionist")) {
+        cout << "\033[31mAuthentication failed\033[0m" << endl;
+        return;
+    }
+
     vector<string> receptionistMenuOptions = {
         "Receptionist Menu:",
         "1. Patient registration",
@@ -272,13 +326,20 @@ void createAppointment(sqlite3* db, string& errorMessage) {
         cout << "Enter the ID of the doctor for the appointment: ";
         cin >> doctorID;
 
-        // Retrieve the doctor's name
+        // Check if the doctor exists
+        bool doctorExists = false;
         for (const auto& doctor : doctors) {
             if (doctor.find("ID: " + to_string(doctorID)) != string::npos) {
                 doctorName = doctor.substr(doctor.find("Name: ") + 6);
                 doctorName = doctorName.substr(0, doctorName.find(","));
+                doctorExists = true;
                 break;
             }
+        }
+
+        if (!doctorExists) {
+            errorMessage = "Error: Doctor with ID " + to_string(doctorID) + " does not exist.";
+            return;
         }
 
         // Retrieve patients from the Patients table
@@ -315,12 +376,19 @@ void createAppointment(sqlite3* db, string& errorMessage) {
         cout << "Enter the ID of the patient for the appointment: ";
         cin >> patientID;
 
-        // Retrieve the patient's name
+        // Check if the patient exists
+        bool patientExists = false;
         for (const auto& patient : patients) {
             if (patient.find("ID: " + to_string(patientID)) != string::npos) {
                 patientName = patient.substr(patient.find("Name: ") + 6);
+                patientExists = true;
                 break;
             }
+        }
+
+        if (!patientExists) {
+            errorMessage = "Error: Patient with ID " + to_string(patientID) + " does not exist.";
+            return;
         }
 
         // Check if the patient already has an appointment
@@ -720,6 +788,7 @@ void viewPatientRecords(sqlite3* db) {
         }
     }
 }
+
 // Main function code
 int main() {
     sqlite3* db;
@@ -776,7 +845,6 @@ int main() {
     sqlite3_close(db);
     return 0;
 }
-
 
 string mainMenu(int choice, sqlite3* db) {
     switch(choice) {
